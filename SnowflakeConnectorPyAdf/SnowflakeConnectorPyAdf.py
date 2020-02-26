@@ -6,3 +6,4 @@ __validParameterNameRegex = @"^[A-Za-z_]{1}[A-Za-z0-9_-]*$";
 __validParameterTypeRegex = @"^VARCHAR|NUMBER$";
 __validParameterValueRegex = @"^[A-Za-z0-9./\\ :_-]+$";
 
+
