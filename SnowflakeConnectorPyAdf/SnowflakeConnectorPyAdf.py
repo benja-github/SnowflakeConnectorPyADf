@@ -4,6 +4,8 @@ import azure.functions as func
 import json 
 import os
 import sys
+import re
+
 
 __validBlobFolderNameRegex = r'^[A-Za-z0-9_-]+$'
 # The parameter name corresponds to a restricted Snowflake unquoted identifier
@@ -14,6 +16,8 @@ __validParameterTypeRegex = r'^VARCHAR|NUMBER$'
 __validParameterValueRegex = r'^[A-Za-z0-9./\\ :_-]+$'
 
 def write_to_log(message,severity='INFO'):
+
+    # Rudimentary logging function for development/local debugging
     now = datetime.now()
     now_string = now.strftime('%d-%m-%Y, %H:%M:%S')
     log_message='{0}::{1} (UTC): {2}'.format(severity,now_string,message)
@@ -29,8 +33,19 @@ def write_to_log(message,severity='INFO'):
     else: #severity.upper='INFO':
         logging.log(logging.INFO,log_message)
     
+def _generate_store_procedure_blob_file_path(database_name, schema_name, stored_procedure_name):
 
-def Run(req: func.HttpRequest):
+    # Generate path to stored procedure file, validating constituent parts along the way
+    path_parts=[database_name, schema_name, stored_procedure_name]
+
+    for path_part in path_parts:
+        if not re.match(__validBlobFolderNameRegex,path_part):
+            write_to_log('invalid object name in blob_file_path: {0} '.format(path_part),'ERROR')
+            sys.exit()
+    
+    return "{0}/{1}/{2}.sql".format(database_name, schema_name, stored_procedure_name)
+
+def run(req: func.HttpRequest):
     # Log start time
     write_to_log('Started funcion Run()')
     
@@ -68,6 +83,10 @@ def Run(req: func.HttpRequest):
                 
         write_to_log('CONFIG {0}'.format(config))
     
+        storage_account_blob_file_path = _generate_store_procedure_blob_file_path(config['databaseName'],config['schemaName'],config['storedProcedureName'])
+
+        write_to_log(storage_account_blob_file_path)
+
     except Exception as e: 
         write_to_log(str(e),'ERROR')
     

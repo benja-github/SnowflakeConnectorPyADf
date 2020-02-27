@@ -17,9 +17,8 @@ import SnowflakeConnectorPyAdf
 def main(req: func.HttpRequest) -> func.HttpResponse:
     logging.info('Python HTTP trigger function processed a request.')
 
-    ret_val = SnowflakeConnectorPyAdf.Run(req)
+    ret_val = SnowflakeConnectorPyAdf.run(req)
 
-    #if name:
     return '---'+ret_val+'|||||' #func.HttpResponse(f"Hello Dave!")
     #else:
     #    return func.HttpResponse(
