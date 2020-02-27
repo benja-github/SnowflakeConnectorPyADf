@@ -1,0 +1,17 @@
+{
+  "databaseName": "MyDatabase",
+  "schemaName": "MySchema",
+  "storedProcedureName": "MyStoredProcedure",
+  "parameters": [
+    {
+      "name": "FIRST_NAME",
+      "type": "VARCHAR",
+      "value": "@{pipeline().parameters.FIRST_NAME}"
+    },
+    {
+      "name": "AGE",
+      "type": "NUMBER",
+      "value": "@{pipeline().parameters.AGE}"
+    }
+  ]
+}
