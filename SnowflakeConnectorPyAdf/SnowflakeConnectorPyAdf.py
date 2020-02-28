@@ -2,10 +2,12 @@ import logging
 from datetime import datetime
 import azure.functions as func
 import json 
-import os
+import os, uuid
 import sys
 import re
-
+# For Below module see: 
+# https://docs.microsoft.com/en-gb/azure/storage/blobs/storage-quickstart-blobs-python
+from azure.storage.blob import baseblobservice
 
 __validBlobFolderNameRegex = r'^[A-Za-z0-9_-]+$'
 # The parameter name corresponds to a restricted Snowflake unquoted identifier
@@ -33,17 +35,32 @@ def write_to_log(message,severity='INFO'):
     else: #severity.upper='INFO':
         logging.log(logging.INFO,log_message)
     
-def _generate_store_procedure_blob_file_path(database_name, schema_name, stored_procedure_name):
+def _generate_store_procedure_blob_file_path(*args,**kwargs):
 
     # Generate path to stored procedure file, validating constituent parts along the way
-    path_parts=[database_name, schema_name, stored_procedure_name]
-
-    for path_part in path_parts:
+    blob_file_path=''
+    for path_part in args:
         if not re.match(__validBlobFolderNameRegex,path_part):
             write_to_log('invalid object name in blob_file_path: {0} '.format(path_part),'ERROR')
             sys.exit()
+        blob_file_path=blob_file_path+'/'+path_part
     
-    return "{0}/{1}/{2}.sql".format(database_name, schema_name, stored_procedure_name)
+    blob_file_path=blob_file_path[1:]
+    return blob_file_path
+
+def read_content_from_blob_async(storage_account_connection_string, blob_container_name, blob_file_name): #, storage_account_container_name, storage_account_blob_file_path):
+
+    # Create the BlobServiceClient object which will be used to create a container client
+    blob_service = baseblobservice.BaseBlobService(connection_string=storage_account_connection_string)
+    
+    #generator = blob_service.list_blob_names('storedprocedures')
+    #for blob_container in generator:
+    #    write_to_log(blob_container)
+
+    write_to_log('SQL FILE PATH & NAME: {0}::{1}'.format(blob_container_name,blob_file_name))
+    sql_blob = blob_service.get_blob_to_text(blob_container_name,blob_file_name)
+    
+    write_to_log(sql_blob.content)
 
 def run(req: func.HttpRequest):
     # Log start time
@@ -83,9 +100,11 @@ def run(req: func.HttpRequest):
                 
         write_to_log('CONFIG {0}'.format(config))
     
-        storage_account_blob_file_path = _generate_store_procedure_blob_file_path(config['databaseName'],config['schemaName'],config['storedProcedureName'])
-
+        storage_account_blob_file_path = _generate_store_procedure_blob_file_path(config['storageAccountContainerName'],config['databaseName'],config['schemaName'])
+        
         write_to_log(storage_account_blob_file_path)
+
+        read_content_from_blob_async(config['storageAccountConnectionString'],storage_account_blob_file_path,config['storedProcedureName']+'.sql')        
 
     except Exception as e: 
         write_to_log(str(e),'ERROR')
