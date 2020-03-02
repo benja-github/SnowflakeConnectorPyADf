@@ -2,9 +2,11 @@ import logging
 from datetime import datetime
 import azure.functions as func
 import json 
-import os, uuid
+import os
 import sys
 import re
+import snowflake.connector
+
 # For Below module see: 
 # https://docs.microsoft.com/en-gb/azure/storage/blobs/storage-quickstart-blobs-python
 from azure.storage.blob import baseblobservice
@@ -60,7 +62,74 @@ def read_content_from_blob_async(storage_account_connection_string, blob_contain
     write_to_log('SQL FILE PATH & NAME: {0}::{1}'.format(blob_container_name,blob_file_name))
     sql_blob = blob_service.get_blob_to_text(blob_container_name,blob_file_name)
     
-    write_to_log(sql_blob.content)
+    sql_text = sql_blob.content
+
+    return sql_text
+
+def split_sql_commands(sql_text):
+    
+    # Takes string of 1+ sql commands, splits by ';' and removes leading/trailing newlines.
+
+    # Split string by ';'
+    sql_commands_raw = sql_text.split(';')
+
+    # lambda function to remove leading/trailing new lines 
+    clean = lambda x: x.strip('\n').strip(' ')
+
+    # apply lambda function to list of sql strings
+    sql_commands = list(map(clean,sql_commands_raw));
+
+    sql_commands = [sql for sql in sql_commands if len(sql)>0]
+
+    #write_to_log(sql_commands)
+
+    return sql_commands
+
+
+def run_snowflake_commands(snowflake_connection_string, set_variable_command, sql_commands):
+
+    # expects a Snowflake connection string in format "account=<account_name>;host=<hostname>;user=<user_name>;password=<pwd>"
+    # N.B c# connector account in format <your_account_name>.<region_id>.<cloud>.snowflakecomputing.com
+    # nut python needs <your_account_name>.<region_id>.<cloud> - i.e. w/o .snowflakecomputing.com
+    # create list of constituent key=value parts
+    sfconn_list = snowflake_connection_string.split(';')
+    # convert to list of key,value tuples
+    sfconn_working = [x.split('=') for x in sfconn_list]
+    # create new empty dict
+    sfconn_details = {}
+    # populate dict from list of tuples, adjusting hostname for python connector
+    for k,v in sfconn_working:
+        sfconn_details[k]=sfconn_details.get(k,v)
+
+    ctx = snowflake.connector.connect(
+        user=sfconn_details['user'],
+        password=sfconn_details['password'],
+        account=sfconn_details['host'].replace('snowflakecomputing.com','')
+        )
+
+    cs = ctx.cursor()
+    try:
+        # can do this as '' and None evaluate to False
+        if set_variable_command:
+            cs.execute(set_variable_command)
+            one_row = cs.fetchone()
+            write_to_log(one_row[0])
+        
+        # Run all save last sql command
+        for sql_command in sql_commands[:-1]:
+            cs.execute(sql_command)
+            cs.close()
+
+        # Run final sql command & retrieve resultset
+        sql_resultset = cs.execute(sql_commands[-1])
+    
+    finally:
+        cs.close()
+    
+    ctx.close()
+
+    return sql_resultset
+
 
 def run(req: func.HttpRequest):
     # Log start time
@@ -104,7 +173,16 @@ def run(req: func.HttpRequest):
         
         write_to_log(storage_account_blob_file_path)
 
-        read_content_from_blob_async(config['storageAccountConnectionString'],storage_account_blob_file_path,config['storedProcedureName']+'.sql')        
+        sql_text = read_content_from_blob_async(config['storageAccountConnectionString'],storage_account_blob_file_path,config['storedProcedureName']+'.sql')        
+
+        sql_commands = split_sql_commands(sql_text)
+
+        # convert any parameters to SQL variables
+        set_variable_command=''
+        #if request_json.get('parameters'):
+        # And on THAT bombshell....
+        # 2/2/2020 - finished.  
+        # START HERE!
 
     except Exception as e: 
         write_to_log(str(e),'ERROR')
