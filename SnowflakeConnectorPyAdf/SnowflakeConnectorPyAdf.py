@@ -100,29 +100,45 @@ def run_snowflake_commands(snowflake_connection_string, set_variable_command, sq
     # populate dict from list of tuples, adjusting hostname for python connector
     for k,v in sfconn_working:
         sfconn_details[k]=sfconn_details.get(k,v)
+    
+    sf_user=sfconn_details['user']
+    sf_password=sfconn_details['password']
+    try:
+        sf_account=sfconn_details['host'].replace('.snowflakecomputing.com','')
+    except:
+        write_to_log('error getting sf_account {0}'.format(sfconn_details['host']))
+
+    #write_to_log('this doesn\'t:')
+    write_to_log('SF USER: {0}'.format(sf_user))
+    write_to_log('SF  PWD: {0}'.format(sf_password))
+    write_to_log('SF ACCT: {0}'.format(sf_account))
 
     ctx = snowflake.connector.connect(
-        user=sfconn_details['user'],
-        password=sfconn_details['password'],
-        account=sfconn_details['host'].replace('snowflakecomputing.com','')
+        user=sf_user,
+        password=sf_password,
+        account=sf_account
         )
 
-    cs = ctx.cursor()
+
     try:
         # can do this as '' and None evaluate to False
         if set_variable_command:
+            cs = ctx.cursor()
             cs.execute(set_variable_command)
             one_row = cs.fetchone()
             write_to_log(one_row[0])
-        
+            cs.close()
+
         # Run all save last sql command
         for sql_command in sql_commands[:-1]:
+            cs = ctx.cursor()
             cs.execute(sql_command)
             cs.close()
 
         # Run final sql command & retrieve resultset
+        cs = ctx.cursor()
         sql_resultset = cs.execute(sql_commands[-1])
-    
+
     finally:
         cs.close()
     
@@ -145,16 +161,12 @@ def generate_set_variables_command(parameters):
         else:
             # NOT SURE ABOUT THIS - MIGHT NEED TO DO MORE STUFF RE DATATYPES
             param_names=param_names+'"'+p_name+'", '
-            param_vals=param_vals+p_value+', '    
+            param_vals=param_vals+'\''+p_value+'\', '    
             
     param_names=param_names[:-2]
     param_vals=param_vals[:-2]
 
-<<<<<<< HEAD
-    generate_set_variables_command = 'SET ({0})=({1})'.format(param_names,param_vals)
-=======
     set_variables_command = 'SET ({0})=({1})'.format(param_names,param_vals)
->>>>>>> 269e0904b01b56753b5c8c81a02c6a500ea2d391
 
     return set_variables_command
 
