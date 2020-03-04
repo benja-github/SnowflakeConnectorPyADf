@@ -150,7 +150,11 @@ def generate_set_variables_command(parameters):
     param_names=param_names[:-2]
     param_vals=param_vals[:-2]
 
+<<<<<<< HEAD
     generate_set_variables_command = 'SET ({0})=({1})'.format(param_names,param_vals)
+=======
+    set_variables_command = 'SET ({0})=({1})'.format(param_names,param_vals)
+>>>>>>> 269e0904b01b56753b5c8c81a02c6a500ea2d391
 
     return set_variables_command
 
@@ -162,56 +166,57 @@ def run(req: func.HttpRequest):
     req_body=str(req.get_body(),'UTF-8')
     request_json = json.loads(req.get_body())
     
-    try:
-        # Get the required inputs and validate them
-        config_keys=['snowflakeConnectionString',
-                    'storageAccountConnectionString',
-                    'storageAccountContainerName']
-        
-        expected_inputs=['databaseName',
-                        'schemaName',
-                        'storedProcedureName']
-        
-        config = {}
-        #  Get app config values
-        for i in config_keys:
-            config_value=os.getenv(i)
-            if not config_value:     
-                write_to_log('{0} not found in config'.format(i),'ERROR')
-                sys.exit()
-            
-            config[i]=config_value
-        # Get mandatory inputs from POST json 
-        for i in expected_inputs:
-            input_value=request_json[i]
-            if not input_value:     
-                write_to_log('{0} not found in config'.format(i),'ERROR')
-                sys.exit()
-            
-            config[i]=input_value
-                
-        write_to_log('CONFIG {0}'.format(config))
+    #try:
+    # Get the required inputs and validate them
+    config_keys=['snowflakeConnectionString',
+                'storageAccountConnectionString',
+                'storageAccountContainerName']
     
-        storage_account_blob_file_path = _generate_store_procedure_blob_file_path(config['storageAccountContainerName'],config['databaseName'],config['schemaName'])
+    expected_inputs=['databaseName',
+                    'schemaName',
+                    'storedProcedureName']
+    
+    config = {}
+    #  Get app config values
+    for i in config_keys:
+        config_value=os.getenv(i)
+        if not config_value:     
+            write_to_log('{0} not found in config'.format(i),'ERROR')
+            sys.exit()
         
-        write_to_log(storage_account_blob_file_path)
-
-        sql_text = read_content_from_blob_async(config['storageAccountConnectionString'],storage_account_blob_file_path,config['storedProcedureName']+'.sql')        
-
-        sql_commands = split_sql_commands(sql_text)
-
-        # convert any parameters to SQL variables
-        set_variable_command=''
-        parameters=request_json.get('parameters')
-        if parameters:
-            generate_set_variables_command(parameters)
-        # And on THAT bombshell....
-        # 2/2/2020 - finished.  
-        # START HERE!
+        config[i]=config_value
+    # Get mandatory inputs from POST json 
+    for i in expected_inputs:
+        input_value=request_json[i]
+        if not input_value:     
+            write_to_log('{0} not found in config'.format(i),'ERROR')
+            sys.exit()
         
-        result_set = run_snowflake_commands(config['snowflakeConnectionString'],set_variable_command,sql_commands)
-        write_to_log(result_set)
-    except Exception as e: 
-        write_to_log(str(e),'ERROR')
+        config[i]=input_value
+            
+    write_to_log('CONFIG {0}'.format(config))
+
+    storage_account_blob_file_path = _generate_store_procedure_blob_file_path(config['storageAccountContainerName'],config['databaseName'],config['schemaName'])
+    
+    write_to_log(storage_account_blob_file_path)
+
+    sql_text = read_content_from_blob_async(config['storageAccountConnectionString'],storage_account_blob_file_path,config['storedProcedureName']+'.sql')        
+
+    sql_commands = split_sql_commands(sql_text)
+
+    # convert any parameters to SQL variables
+    set_variables_command=''
+    parameters=request_json.get('parameters')
+    if parameters:
+        set_variables_command=generate_set_variables_command(parameters)
+    # And on THAT bombshell....
+    # 2/2/2020 - finished.  
+    # START HERE!
+    
+    result_set = run_snowflake_commands(config['snowflakeConnectionString'],set_variables_command,sql_commands)
+    write_to_log(result_set)
+
+    #except Exception as e: 
+    #    write_to_log(str(e),'ERROR')
     
     return result_set
