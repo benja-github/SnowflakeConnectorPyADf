@@ -6,12 +6,12 @@
     {
       "name": "FIRST_NAME",
       "type": "VARCHAR",
-      "value": "@{pipeline().parameters.FIRST_NAME}"
+      "value": "Rodney"
     },
     {
       "name": "AGE",
       "type": "NUMBER",
-      "value": "@{pipeline().parameters.AGE}"
+      "value": "36"
     }
   ]
 }

@@ -77,7 +77,7 @@ def split_sql_commands(sql_text):
     clean = lambda x: x.strip('\n').strip(' ')
 
     # apply lambda function to list of sql strings
-    sql_commands = list(map(clean,sql_commands_raw));
+    sql_commands = list(map(clean,sql_commands_raw))
 
     sql_commands = [sql for sql in sql_commands if len(sql)>0]
 
@@ -130,6 +130,29 @@ def run_snowflake_commands(snowflake_connection_string, set_variable_command, sq
 
     return sql_resultset
 
+def generate_set_variables_command(parameters):
+
+    param_names = ''
+    param_vals = ''
+
+    for parameter in parameters:
+        p_name = parameter['name']
+        p_value = parameter['value']
+        p_type = parameter['type'].upper()
+        if not re.match(__validParameterNameRegex,p_name) and re.match(__validParameterValueRegex,p_value):
+            write_to_log('invalid parameter: {0}={1)'.format(p_name, p_value),'ERROR')
+            sys.exit()
+        else:
+            # NOT SURE ABOUT THIS - MIGHT NEED TO DO MORE STUFF RE DATATYPES
+            param_names=param_names+'"'+p_name+'", '
+            param_vals=param_vals+p_value+', '    
+            
+    param_names=param_names[:-2]
+    param_vals=param_vals[:-2]
+
+    generate_set_variables_command = 'SET ({0})=({1})'.format(param_names,param_vals)
+
+    return set_variables_command
 
 def run(req: func.HttpRequest):
     # Log start time
@@ -179,12 +202,16 @@ def run(req: func.HttpRequest):
 
         # convert any parameters to SQL variables
         set_variable_command=''
-        #if request_json.get('parameters'):
+        parameters=request_json.get('parameters')
+        if parameters:
+            generate_set_variables_command(parameters)
         # And on THAT bombshell....
         # 2/2/2020 - finished.  
         # START HERE!
-
+        
+        result_set = run_snowflake_commands(config['snowflakeConnectionString'],set_variable_command,sql_commands)
+        write_to_log(result_set)
     except Exception as e: 
         write_to_log(str(e),'ERROR')
     
-    return 'Done'
+    return result_set
