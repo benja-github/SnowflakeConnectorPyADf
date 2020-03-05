@@ -137,7 +137,10 @@ def run_snowflake_commands(snowflake_connection_string, set_variable_command, sq
 
         # Run final sql command & retrieve resultset
         cs = ctx.cursor()
-        sql_resultset = cs.execute(sql_commands[-1])
+        tostr = lambda x: str(x)
+        str_results = list(map(tostr,cs.execute(sql_commands[-1])))
+
+        sql_resultset = [rec for rec in str_results]
 
     finally:
         cs.close()
