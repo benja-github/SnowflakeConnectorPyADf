@@ -5,11 +5,19 @@ import json
 import os
 import sys
 import re
+
+# For Below module see: 
+# https://docs.snowflake.net/manuals/user-guide/python-connector.html
 import snowflake.connector
 
 # For Below module see: 
 # https://docs.microsoft.com/en-gb/azure/storage/blobs/storage-quickstart-blobs-python
 from azure.storage.blob import baseblobservice
+
+# For Below module see: 
+#https://docs.microsoft.com/en-us/python/api/overview/azure/key-vault?view=azure-python
+from azure.keyvault import keys
+from azure.common.credentials import ServicePrincipalCredentials
 
 __validBlobFolderNameRegex = r'^[A-Za-z0-9_-]+$'
 # The parameter name corresponds to a restricted Snowflake unquoted identifier
