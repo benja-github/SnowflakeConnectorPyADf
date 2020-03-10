@@ -148,10 +148,6 @@ def run_snowflake_commands(snowflake_connection_string, set_variable_command, sq
 
         # Run final sql command & retrieve resultset
         cs = ctx.cursor()
-        results = cs.execute(sql_commands[-1])
-        #tostr = lambda x: str(x)
-        #str_results = list(map(tostr,cs.execute(sql_commands[-1])))
-        #sql_resultset = cs.fetchall()  
         pandas_resultset = cs.fetch_pandas_all()
         write_to_log('PANDAS RESULTSET: {0}'.format(pandas_resultset))
         json_resultstring=pandas_resultset.to_json(orient='index')
@@ -161,6 +157,8 @@ def run_snowflake_commands(snowflake_connection_string, set_variable_command, sq
         cs.close()
     
     ctx.close()
+
+    
     json_resultset = json.loads(json_resultstring)
     json_firstrow=json.dumps(json_resultset['0'])
     write_to_log('JSON FIRST ROW: {0}'.format(json_firstrow))
@@ -176,7 +174,7 @@ def generate_set_variables_command(parameters):
         p_value = parameter['value']
         p_type = parameter['type'].upper()
         if not re.match(__validParameterNameRegex,p_name) and re.match(__validParameterValueRegex,p_value):
-            write_to_log('invalid parameter: {0}={1)'.format(p_name, p_value),'ERROR')
+            write_to_log('invalid parameter: {0}={1}'.format(p_name, p_value),'ERROR')
             sys.exit()
         else:
             # NOT SURE ABOUT THIS - MIGHT NEED TO DO MORE STUFF RE DATATYPES
@@ -195,7 +193,6 @@ def run(req: func.HttpRequest):
     write_to_log('Started funcion Run()')
     
     # Read the POST body and convert to JSON object
-    req_body=str(req.get_body(),'UTF-8')
     request_json = json.loads(req.get_body())
     
     #try:
