@@ -5,10 +5,11 @@ import json
 import os
 import sys
 import re
-import pandas
+import pandas # As of 10/3/2020, needs v0.24.2 for lzma compatibility
 
 # For Below module see: 
 # https://docs.snowflake.net/manuals/user-guide/python-connector.html
+# use pandas versions (pip install snowflake-connector-python[pandas])
 import snowflake.connector
 
 # For Below module see: 
@@ -95,6 +96,29 @@ def split_sql_commands(sql_text):
 
     return sql_commands
 
+def generate_set_variables_command(parameters):
+
+    param_names = ''
+    param_vals = ''
+
+    for parameter in parameters:
+        p_name = parameter['name']
+        p_value = parameter['value']
+        p_type = parameter['type'].upper()
+        if not re.match(__validParameterNameRegex,p_name) and re.match(__validParameterValueRegex,p_value):
+            write_to_log('invalid parameter: {0}={1}'.format(p_name, p_value),'ERROR')
+            sys.exit()
+        else:
+            # NOT SURE ABOUT THIS - MIGHT NEED TO DO MORE STUFF RE DATATYPES
+            param_names=param_names+'"'+p_name+'", '
+            param_vals=param_vals+'\''+str(p_value)+'\', '    
+            
+    param_names=param_names[:-2]
+    param_vals=param_vals[:-2]
+
+    set_variables_command = 'SET ({0})=({1})'.format(param_names,param_vals)
+
+    return set_variables_command
 
 def run_snowflake_commands(snowflake_connection_string, set_variable_command, sql_commands):
 
@@ -129,7 +153,6 @@ def run_snowflake_commands(snowflake_connection_string, set_variable_command, sq
         account=sf_account
         )
 
-
     try:
         # can do this as '' and None evaluate to False
         if set_variable_command:
@@ -146,10 +169,12 @@ def run_snowflake_commands(snowflake_connection_string, set_variable_command, sq
             cs.execute(sql_command)
             cs.close()
 
-        # Run final sql command & retrieve resultset
+        # Run final sql command & retrieve resultset as pandas df
         cs = ctx.cursor()
+        cs.execute(sql_commands[-1])
         pandas_resultset = cs.fetch_pandas_all()
         write_to_log('PANDAS RESULTSET: {0}'.format(pandas_resultset))
+        # Export panda df to json structure - this is type dict
         json_resultstring=pandas_resultset.to_json(orient='index')
         #sql_resultset = [rec for rec in str_results]
 
@@ -158,35 +183,14 @@ def run_snowflake_commands(snowflake_connection_string, set_variable_command, sq
     
     ctx.close()
 
-    
+    # load json dict into json type using json module
     json_resultset = json.loads(json_resultstring)
+    # Export first row as json doc in string format. 
+    # This is because we are currently need to values from first row into next ADF step)
+    # this is for day one and needs to be more generic
     json_firstrow=json.dumps(json_resultset['0'])
     write_to_log('JSON FIRST ROW: {0}'.format(json_firstrow))
     return json_firstrow
-
-def generate_set_variables_command(parameters):
-
-    param_names = ''
-    param_vals = ''
-
-    for parameter in parameters:
-        p_name = parameter['name']
-        p_value = parameter['value']
-        p_type = parameter['type'].upper()
-        if not re.match(__validParameterNameRegex,p_name) and re.match(__validParameterValueRegex,p_value):
-            write_to_log('invalid parameter: {0}={1}'.format(p_name, p_value),'ERROR')
-            sys.exit()
-        else:
-            # NOT SURE ABOUT THIS - MIGHT NEED TO DO MORE STUFF RE DATATYPES
-            param_names=param_names+'"'+p_name+'", '
-            param_vals=param_vals+'\''+str(p_value)+'\', '    
-            
-    param_names=param_names[:-2]
-    param_vals=param_vals[:-2]
-
-    set_variables_command = 'SET ({0})=({1})'.format(param_names,param_vals)
-
-    return set_variables_command
 
 def run(req: func.HttpRequest):
     # Log start time
@@ -238,9 +242,6 @@ def run(req: func.HttpRequest):
     parameters=request_json.get('parameters')
     if parameters:
         set_variables_command=generate_set_variables_command(parameters)
-    # And on THAT bombshell....
-    # 2/2/2020 - finished.  
-    # START HERE!
     
     result_set = run_snowflake_commands(config['snowflakeConnectionString'],set_variables_command,sql_commands)
     write_to_log(result_set)
