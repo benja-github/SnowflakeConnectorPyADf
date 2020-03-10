@@ -5,6 +5,7 @@ import json
 import os
 import sys
 import re
+import pandas
 
 # For Below module see: 
 # https://docs.snowflake.net/manuals/user-guide/python-connector.html
@@ -68,6 +69,7 @@ def read_content_from_blob_async(storage_account_connection_string, blob_contain
     #    write_to_log(blob_container)
 
     write_to_log('SQL FILE PATH & NAME: {0}::{1}'.format(blob_container_name,blob_file_name))
+    
     sql_blob = blob_service.get_blob_to_text(blob_container_name,blob_file_name)
     
     sql_text = sql_blob.content
@@ -138,24 +140,31 @@ def run_snowflake_commands(snowflake_connection_string, set_variable_command, sq
             cs.close()
 
         # Run all save last sql command
-        for sql_command in sql_commands[:-1]:
+        for sql_command in sql_commands[:len(sql_commands)-1]:
+            write_to_log('SQL COMMAND: {0}'.format(sql_command))
             cs = ctx.cursor()
             cs.execute(sql_command)
             cs.close()
 
         # Run final sql command & retrieve resultset
         cs = ctx.cursor()
-        tostr = lambda x: str(x)
-        str_results = list(map(tostr,cs.execute(sql_commands[-1])))
-
-        sql_resultset = [rec for rec in str_results]
+        results = cs.execute(sql_commands[-1])
+        #tostr = lambda x: str(x)
+        #str_results = list(map(tostr,cs.execute(sql_commands[-1])))
+        #sql_resultset = cs.fetchall()  
+        pandas_resultset = cs.fetch_pandas_all()
+        write_to_log('PANDAS RESULTSET: {0}'.format(pandas_resultset))
+        json_resultstring=pandas_resultset.to_json(orient='index')
+        #sql_resultset = [rec for rec in str_results]
 
     finally:
         cs.close()
     
     ctx.close()
-
-    return sql_resultset
+    json_resultset = json.loads(json_resultstring)
+    json_firstrow=json.dumps(json_resultset['0'])
+    write_to_log('JSON FIRST ROW: {0}'.format(json_firstrow))
+    return json_firstrow
 
 def generate_set_variables_command(parameters):
 
@@ -172,7 +181,7 @@ def generate_set_variables_command(parameters):
         else:
             # NOT SURE ABOUT THIS - MIGHT NEED TO DO MORE STUFF RE DATATYPES
             param_names=param_names+'"'+p_name+'", '
-            param_vals=param_vals+'\''+p_value+'\', '    
+            param_vals=param_vals+'\''+str(p_value)+'\', '    
             
     param_names=param_names[:-2]
     param_vals=param_vals[:-2]

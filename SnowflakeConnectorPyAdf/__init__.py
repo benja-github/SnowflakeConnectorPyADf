@@ -19,7 +19,7 @@ def main(req: func.HttpRequest) -> func.HttpResponse:
 
     ret_val = SnowflakeConnectorPyAdf.run(req)
     
-    return '\n'.join(ret_val)
+    return func.HttpResponse(ret_val)
     #func.HttpResponse('\n'.join(ret_val))
     #else:
     #    return func.HttpResponse(

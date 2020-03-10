@@ -26,8 +26,11 @@ lazy-object-proxy==1.4.3
 mccabe==0.6.1
 msrest==0.6.11
 msrestazure==0.6.2
+numpy==1.18.1
 oauthlib==3.1.0
 oscrypto==1.2.0
+pandas==0.25.3
+pyarrow==0.15.1
 pycparser==2.20
 pycryptodomex==3.9.7
 PyJWT==1.7.1
