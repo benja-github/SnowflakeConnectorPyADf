@@ -1,0 +1,27 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentParameters.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "sites_sfconnpythonfa_name": {
+            "value": null
+        },
+        "vaults_sfconnpythonkv_name": {
+            "value": null
+        },
+        "components_sfconnpythonair_name": {
+            "value": null
+        },
+        "storageAccounts_sfconnpythonsa_name": {
+            "value": null
+        },
+        "serverfarms_WestEuropeLinuxDynamicPlan_name": {
+            "value": null
+        },
+        "smartdetectoralertrules_failure_anomalies___sfconnpythonair_name": {
+            "value": null
+        },
+        "actiongroups_application_20insights_20smart_20detection_externalid": {
+            "value": null
+        }
+    }
+}
