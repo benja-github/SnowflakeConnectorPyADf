@@ -1,0 +1,680 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+        "resourceNamePrefix": {
+            "type": "string"
+        },
+        "keyVaultOwnerObjectId": {
+            "type": "string"
+        },
+        "snowflakeConnectionString": {
+            "type": "securestring"
+        }
+    },
+    "variables": {
+        "keyVaultName": "[concat(parameters('resourceNamePrefix'), 'kv')]",
+        "storageAccountName": "[concat(parameters('resourceNamePrefix'), 'sa')]",
+        "appServicePlanName": "[concat(parameters('resourceNamePrefix'), 'asp')]",
+        "functionAppName": "[concat(parameters('resourceNamePrefix'), 'fa')]",
+        "dataFactoryName": "[concat(parameters('resourceNamePrefix'), 'adf')]",
+        "dataFactoryId": "[concat('Microsoft.DataFactory/factories/', variables('dataFactoryName'))]",
+        "applicationInsightsName": "[concat(parameters('resourceNamePrefix'), 'air')]",
+        "smartDetectionExernalID":"[concat('/subscriptions/',subscription().subscriptionId,'/resourceGroups/',resourceGroup().name,'/providers/microsoft.insights/actiongroups/application%20insights%20smart%20detection')]",
+        "storageAccountContainerNameSprocs": "storedprocedures",
+        "storageAccountContainerNameStage": "blobstage"
+    },
+    "resources": [
+        {
+          "type": "Microsoft.Storage/storageAccounts",
+          "apiVersion": "2019-04-01",
+          "name": "[variables('storageAccountName')]",
+          "location": "[resourceGroup().location]",
+          "sku": {
+              "name": "Standard_LRS",
+              "tier": "Standard"
+          },
+          "kind": "StorageV2",
+          "properties": {
+              "networkAcls": {
+                  "bypass": "AzureServices",
+                  "virtualNetworkRules": [],
+                  "ipRules": [],
+                  "defaultAction": "Allow"
+              },
+              "supportsHttpsTrafficOnly": true,
+              "encryption": {
+                  "services": {
+                      "file": {
+                          "enabled": true
+                      },
+                      "blob": {
+                          "enabled": true
+                      }
+                  },
+                  "keySource": "Microsoft.Storage"
+              },
+              "accessTier": "Hot"
+          }
+      },
+      {
+          "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+          "apiVersion": "2019-04-01",
+          "name": "[concat(variables('storageAccountName'), '/default/', variables('storageAccountContainerNameSprocs'))]",
+          "properties": {
+              "publicAccess": "None"
+          },
+          "dependsOn": [
+              "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+          ]
+      },
+      {
+          "type": "Microsoft.Storage/storageAccounts/blobServices/containers",
+          "apiVersion": "2019-04-01",
+          "name": "[concat(variables('storageAccountName'), '/default/', variables('storageAccountContainerNameStage'))]",
+          "properties": {
+              "publicAccess": "None"
+          },
+          "dependsOn": [
+              "[resourceId('Microsoft.Storage/storageAccounts', variables('storageAccountName'))]"
+          ]
+      },
+      {
+          "type": "Microsoft.KeyVault/vaults",
+          "apiVersion": "2016-10-01",
+          "name": "[variables('keyVaultName')]",
+          "location": "[resourceGroup().location]",
+          "properties": {
+              "sku": {
+                  "family": "A",
+                  "name": "Standard"
+              },
+              "tenantId": "[subscription().tenantId]",
+              "accessPolicies": [
+                  {
+                      "tenantId": "[subscription().tenantId]",
+                      "objectId": "[parameters('keyVaultOwnerObjectId')]",
+                      "permissions": {
+                          "keys": [],
+                          "secrets": [
+                              "Get",
+                              "List",
+                              "Set"
+                          ],
+                          "certificates": []
+                      }
+                  }
+              ],
+              "enabledForDeployment": false,
+              "enabledForDiskEncryption": false,
+              "enabledForTemplateDeployment": false
+          }
+      },
+      {
+          "type": "Microsoft.KeyVault/vaults/secrets",
+          "apiVersion": "2018-02-14",
+          "name": "[concat(variables('keyVaultName'), '/storageAccountConnectionString')]",
+          "location": "[resourceGroup().location]",
+          "properties": {
+              "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageAccountName'),';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('StorageAccountName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]"
+          },
+          "dependsOn": [
+              "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
+              "[variables('storageAccountName')]"
+          ]
+      },
+      {
+          "type": "Microsoft.KeyVault/vaults/secrets",
+          "apiVersion": "2018-02-14",
+          "name": "[concat(variables('keyVaultName'), '/snowflakeConnectionString')]",
+          "location": "[resourceGroup().location]",
+          "properties": {
+              "value": "[parameters('snowflakeConnectionString')]"
+          },
+          "dependsOn": [
+              "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]"
+          ]
+      },
+      {
+          "type": "Microsoft.KeyVault/vaults/secrets",
+          "apiVersion": "2018-02-14",
+          "name": "[concat(variables('keyVaultName'), '/functionAppHostKey')]",
+          "location": "[resourceGroup().location]",
+          "properties": {
+              "value": "[listkeys(concat(resourceGroup().id,'/providers/Microsoft.Web/sites/', variables('functionAppName'), '/host/default/'),'2016-08-01').functionKeys.default]"
+          },
+          "dependsOn": [
+              "[resourceId('Microsoft.KeyVault/vaults', variables('keyVaultName'))]",
+              "[variables('functionAppName')]"
+          ]
+      },
+      {
+          "type": "Microsoft.Web/serverfarms",
+          "apiVersion": "2018-11-01",
+          "name": "[variables('appServicePlanName')]",
+          "location": "[resourceGroup().location]",
+          "sku": {
+              "name": "Y1",
+              "tier": "Dynamic",
+              "size": "Y1",
+              "family": "Y",
+              "capacity": 0
+          },
+          "kind": "linux",
+          "properties": {
+              "name": "[variables('appServicePlanName')]",
+              "perSiteScaling": false,
+              "reserved": true,
+              "targetWorkerCount": 0,
+              "targetWorkerSizeId": 0
+          }
+        },
+        {
+            "type": "Microsoft.Web/sites",
+            "apiVersion": "2018-11-01",
+            "name": "[variables('functionAppName')]",
+            "location": "[resourceGroup().location]",
+            "kind": "functionapp,linux",
+            "identity": {
+                "type": "SystemAssigned"
+            },
+            "dependsOn": [
+                "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]"
+            ],
+            "properties": {
+                "serverFarmID": "[resourceId('Microsoft.Web/serverfarms', variables('appServicePlanName'))]",
+                "name": "[variables('functionAppName')]",
+                "clientAffinityEnabled": false,
+                "reserved": true,
+                "siteConfig": {
+                    "appSettings": [
+                        {
+                            "name": "FUNCTIONS_EXTENSION_VERSION",
+                            "value": "~2"
+                        },
+                        {
+                            "name": "FUNCTIONS_WORKER_RUNTIME",
+                            "value": "python"
+                        },
+                        {
+                            "name": "AzureWebJobsStorage",
+                            "value": "[concat('DefaultEndpointsProtocol=https;AccountName=',variables('storageAccountName'),';AccountKey=',listKeys(resourceId('Microsoft.Storage/storageAccounts', variables('StorageAccountName')), providers('Microsoft.Storage', 'storageAccounts').apiVersions[0]).keys[0].value)]"
+                        },
+                        {
+                            "name": "storageAccountConnectionString",
+                            "value": "[concat('@Microsoft.KeyVault(SecretUri=https://',variables('keyVaultName'),'.vault.azure.net/secrets/storageAccountConnectionString/VERSION)')]"
+                        },
+                        {
+                            "name": "storageAccountContainerName",
+                            "value": "[variables('storageAccountContainerNameSprocs')]"
+                        },
+                        {
+                            "name": "snowflakeConnectionString",
+                            "value": "[concat('@Microsoft.KeyVault(SecretUri=https://',variables('keyVaultName'),'.vault.azure.net/secrets/snowflakeConnectionString/VERSION)')]"
+                        }
+                    ]
+                  }
+              }
+          },
+          {
+                "type": "Microsoft.DataFactory/factories",
+                "apiVersion": "2018-06-01",
+                "name": "[variables('dataFactoryName')]",
+                "location": "[resourceGroup().location]",
+                "identity": {
+                    "type": "SystemAssigned"
+                },
+                "properties": {}
+            },
+            {
+                "type": "Microsoft.DataFactory/factories/linkedServices",
+                "apiVersion": "2018-06-01",
+                "name": "[concat(variables('dataFactoryName'), '/KeyVault_LS')]",
+                "properties": {
+                    "annotations": [],
+                    "type": "AzureKeyVault",
+                    "typeProperties": {
+                        "baseUrl": "[concat('https://', variables('keyVaultName'), '.vault.azure.net/')]"
+                    }
+                },
+                "dependsOn": [
+                    "[variables('dataFactoryName')]"
+                ]
+            },
+            {
+                "type": "Microsoft.DataFactory/factories/linkedServices",
+                "apiVersion": "2018-06-01",
+                "name": "[concat(variables('dataFactoryName'), '/FunctionApp_LS')]",
+                "properties": {
+                    "annotations": [],
+                    "type": "AzureFunction",
+                    "typeProperties": {
+                        "functionAppUrl": "[concat('https://', variables('functionAppName'), '.azurewebsites.net')]",
+                        "functionKey": {
+                            "type": "AzureKeyVaultSecret",
+                            "store": {
+                                "referenceName": "KeyVault_LS",
+                                "type": "LinkedServiceReference"
+                            },
+                            "secretName": "functionAppHostKey"
+                        }
+                    }
+                },
+                "dependsOn": [
+                    "[concat(variables('dataFactoryId'), '/linkedServices/KeyVault_LS')]"
+                ]
+            },
+            {
+                "type": "Microsoft.DataFactory/factories/linkedServices",
+                "apiVersion": "2018-06-01",
+                "name": "[concat(variables('dataFactoryName'), '/BlobStage_LS')]",
+                "properties": {
+                    "annotations": [],
+                    "type": "AzureBlobStorage",
+                    "typeProperties": {
+                        "connectionString": {
+                            "type": "AzureKeyVaultSecret",
+                            "store": {
+                                "referenceName": "KeyVault_LS",
+                                "type": "LinkedServiceReference"
+                            },
+                            "secretName": "storageAccountConnectionString"
+                        }
+                    }
+                },
+                "dependsOn": [
+                    "[concat(variables('dataFactoryId'), '/linkedServices/KeyVault_LS')]"
+                ]
+            },
+            {
+                "type": "Microsoft.DataFactory/factories/linkedServices",
+                "apiVersion": "2018-06-01",
+                "name": "[concat(variables('dataFactoryName'), '/TripPin_LS')]",
+                "properties": {
+                    "annotations": [],
+                    "type": "OData",
+                    "typeProperties": {
+                        "url": "https://services.odata.org/TripPinRESTierService",
+                        "authenticationType": "Anonymous"
+                    }
+                },
+                "dependsOn": [
+                    "[variables('dataFactoryName')]"
+                ]
+            },
+            {
+                "type": "Microsoft.DataFactory/factories/datasets",
+                "apiVersion": "2018-06-01",
+                "name": "[concat(variables('dataFactoryName'), '/DelimitedText_DS')]",
+                "properties": {
+                    "linkedServiceName": {
+                        "referenceName": "BlobStage_LS",
+                        "type": "LinkedServiceReference"
+                    },
+                    "parameters": {
+                        "fileName": {
+                            "type": "string"
+                        }
+                    },
+                    "annotations": [],
+                    "type": "DelimitedText",
+                    "typeProperties": {
+                        "location": {
+                            "type": "AzureBlobStorageLocation",
+                            "fileName": {
+                                "value": "@dataset().fileName",
+                                "type": "Expression"
+                            },
+                            "container": "[variables('storageAccountContainerNameStage')]"
+                        },
+                        "columnDelimiter": ",",
+                        "rowDelimiter": "\n",
+                        "escapeChar": "\\",
+                        "firstRowAsHeader": true,
+                        "quoteChar": "\""
+                    },
+                    "schema": []
+                },
+                "dependsOn": [
+                    "[concat(variables('dataFactoryId'), '/linkedServices/BlobStage_LS')]"
+                ]
+            },
+            {
+                "type": "Microsoft.DataFactory/factories/datasets",
+                "apiVersion": "2018-06-01",
+                "name": "[concat(variables('dataFactoryName'), '/TripPin_DS')]",
+                "properties": {
+                    "linkedServiceName": {
+                        "referenceName": "TripPin_LS",
+                        "type": "LinkedServiceReference"
+                    },
+                    "annotations": [],
+                    "type": "ODataResource",
+                    "schema": [],
+                    "typeProperties": {
+                        "path": "People"
+                    }
+                },
+                "dependsOn": [
+                    "[concat(variables('dataFactoryId'), '/linkedServices/TripPin_LS')]"
+                ]
+            },
+            {
+                "type": "Microsoft.DataFactory/factories/pipelines",
+                "apiVersion": "2018-06-01",
+                "name": "[concat(variables('dataFactoryName'), '/SampleSnowflakePipeline_P')]",
+                "properties": {
+                    "activities": [
+                        {
+                            "name": "StoredProcedure1",
+                            "type": "AzureFunctionActivity",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "7.00:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "functionName": "SnowflakeConnectorPyAdf",
+                                "method": "POST",
+                                "headers": {},
+                                "body": {
+                                    "value": "{\n  \"databaseName\": \"MyDatabase\",\n  \"schemaName\": \"MySchema\",\n  \"storedProcedureName\": \"MyStoredProcedure\",\n  \"parameters\": [\n    {\n      \"name\": \"FIRST_NAME\",\n      \"type\": \"VARCHAR\",\n      \"value\": \"@{pipeline().parameters.FIRST_NAME}\"\n    },\n    {\n      \"name\": \"AGE\",\n      \"type\": \"NUMBER\",\n      \"value\": @{pipeline().parameters.AGE}\n    }\n  ]\n}",
+                                    "type": "Expression"
+                                }
+                            },
+                            "linkedServiceName": {
+                                "referenceName": "FunctionApp_LS",
+                                "type": "LinkedServiceReference"
+                            }
+                        },
+                        {
+                            "name": "StoredProcedure2",
+                            "type": "AzureFunctionActivity",
+                            "dependsOn": [
+                                {
+                                    "activity": "StoredProcedure1",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "7.00:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "functionName": "SnowflakeConnectorPyAdf",
+                                "method": "POST",
+                                "headers": {},
+                                "body": {
+                                    "value": "{\n  \"databaseName\": \"MyDatabase\",\n  \"schemaName\": \"MySchema\",\n  \"storedProcedureName\": \"MyStoredProcedure\",\n  \"parameters\": [\n    {\n      \"name\": \"FIRST_NAME\",\n      \"type\": \"VARCHAR\",\n      \"value\": \"@{activity('StoredProcedure1').output.OUTPUT_1}\"\n    },\n    {\n      \"name\": \"AGE\",\n      \"type\": \"NUMBER\",\n      \"value\": @{activity('StoredProcedure1').output.OUTPUT_2}\n    }\n  ]\n}",
+                                    "type": "Expression"
+                                }
+                            },
+                            "linkedServiceName": {
+                                "referenceName": "FunctionApp_LS",
+                                "type": "LinkedServiceReference"
+                            }
+                        }
+                    ],
+                    "parameters": {
+                        "FIRST_NAME": {
+                            "type": "string",
+                            "defaultValue": "Foo"
+                        },
+                        "AGE": {
+                            "type": "int",
+                            "defaultValue": 10
+                        }
+                    },
+                    "annotations": []
+                },
+                "dependsOn": [
+                    "[concat(variables('dataFactoryId'), '/linkedServices/FunctionApp_LS')]"
+                ]
+            },
+            {
+                "type": "Microsoft.DataFactory/factories/pipelines",
+                "apiVersion": "2018-06-01",
+                "name": "[concat(variables('dataFactoryName'), '/DataIngestion_P')]",
+                "properties": {
+                    "activities": [
+                        {
+                            "name": "StartPipelineExecutionLog_AF",
+                            "type": "AzureFunctionActivity",
+                            "dependsOn": [],
+                            "policy": {
+                                "timeout": "7.00:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "functionName": "SnowflakeConnectorPyAdf",
+                                "method": "POST",
+                                "headers": {},
+                                "body": {
+                                    "value": "{\n    \"databaseName\": \"@{pipeline().parameters.databaseName}\",\n    \"schemaName\": \"LOGS\",\n    \"storedProcedureName\": \"SP_START_PIPELINE_EXECUTION\",\n    \"parameters\": [\n      {\n        \"name\": \"ADF_PIPELINE_RUN_ID\",\n        \"type\": \"VARCHAR\",\n        \"value\": \"@{pipeline().RunId}\"\n      },\n      {\n        \"name\": \"ADF_PIPELINE_NAME\",\n        \"type\": \"VARCHAR\",\n        \"value\": \"@{pipeline().Pipeline}\"\n      },\n      {\n        \"name\": \"ADF_PIPELINE_TRIGGER_ID\",\n        \"type\": \"VARCHAR\",\n        \"value\": \"@{pipeline().TriggerId}\"\n      },\n      {\n        \"name\": \"ADF_PIPELINE_TRIGGER_NAME\",\n        \"type\": \"VARCHAR\",\n        \"value\": \"@{pipeline().TriggerName}\"\n      },\n      {\n        \"name\": \"ADF_PIPELINE_TRIGGER_TYPE\",\n        \"type\": \"VARCHAR\",\n        \"value\": \"@{pipeline().TriggerType}\"\n      },\n      {\n        \"name\": \"ADF_PIPELINE_TRIGGER_TIME\",\n        \"type\": \"VARCHAR\",\n        \"value\": \"@{pipeline().TriggerTime}\"\n      },\n      {\n        \"name\": \"ADF_DATA_FACTORY_NAME\",\n        \"type\": \"VARCHAR\",\n        \"value\": \"@{pipeline().DataFactory}\"\n      }\n    ]\n}",
+                                    "type": "Expression"
+                                }
+                            },
+                            "linkedServiceName": {
+                                "referenceName": "FunctionApp_LS",
+                                "type": "LinkedServiceReference"
+                            }
+                        },
+                        {
+                            "name": "SetFileName_SV",
+                            "type": "SetVariable",
+                            "dependsOn": [
+                                {
+                                    "activity": "StartPipelineExecutionLog_AF",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "userProperties": [],
+                            "typeProperties": {
+                                "variableName": "fileName",
+                                "value": {
+                                    "value": "@concat(pipeline().parameters.tableName, '_', formatDateTime(pipeline().TriggerTime,'yyyyMMddHHmmss'), '.txt')",
+                                    "type": "Expression"
+                                }
+                            }
+                        },
+                        {
+                            "name": "CopySourceToBlob_CD",
+                            "type": "Copy",
+                            "dependsOn": [
+                                {
+                                    "activity": "SetFileName_SV",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "7.00:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "source": {
+                                    "type": "ODataSource"
+                                },
+                                "sink": {
+                                    "type": "DelimitedTextSink",
+                                    "storeSettings": {
+                                        "type": "AzureBlobStorageWriteSettings"
+                                    },
+                                    "formatSettings": {
+                                        "type": "DelimitedTextWriteSettings",
+                                        "quoteAllText": true,
+                                        "fileExtension": ".txt"
+                                    }
+                                },
+                                "enableStaging": false
+                            },
+                            "inputs": [
+                                {
+                                    "referenceName": "TripPin_DS",
+                                    "type": "DatasetReference",
+                                    "parameters": {}
+                                }
+                            ],
+                            "outputs": [
+                                {
+                                    "referenceName": "DelimitedText_DS",
+                                    "type": "DatasetReference",
+                                    "parameters": {
+                                        "fileName": {
+                                            "value": "@variables('fileName')",
+                                            "type": "Expression"
+                                        }
+                                    }
+                                }
+                            ]
+                        },
+                        {
+                            "name": "CopyBlobToStage_AF",
+                            "type": "AzureFunctionActivity",
+                            "dependsOn": [
+                                {
+                                    "activity": "CopySourceToBlob_CD",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "7.00:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "functionName": "SnowflakeConnectorPyAdf",
+                                "method": "POST",
+                                "headers": {},
+                                "body": {
+                                    "value": "{\n  \"databaseName\": \"@{pipeline().parameters.databaseName}\",\n  \"schemaName\": \"@{pipeline().parameters.schemaName}\",\n  \"storedProcedureName\": \"SP_LOAD_@{pipeline().parameters.tableName}_STAGE\",\n  \"parameters\": [\n    {\n      \"name\": \"FILE_NAME\",\n      \"type\": \"VARCHAR\",\n      \"value\": \"@{variables('fileName')}\"\n    }\n  ]\n}",
+                                    "type": "Expression"
+                                }
+                            },
+                            "linkedServiceName": {
+                                "referenceName": "FunctionApp_LS",
+                                "type": "LinkedServiceReference"
+                            }
+                        },
+                        {
+                            "name": "MergeStageToTarget_AF",
+                            "type": "AzureFunctionActivity",
+                            "dependsOn": [
+                                {
+                                    "activity": "CopyBlobToStage_AF",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "7.00:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "functionName": "SnowflakeConnectorPyAdf",
+                                "method": "POST",
+                                "headers": {},
+                                "body": {
+                                    "value": "{\n  \"databaseName\": \"@{pipeline().parameters.databaseName}\",\n  \"schemaName\": \"@{pipeline().parameters.schemaName}\",\n  \"storedProcedureName\": \"SP_MERGE_@{pipeline().parameters.tableName}\",\n  \"parameters\": [\n    {\n      \"name\": \"PIPELINE_RUN_ID\",\n      \"type\": \"VARCHAR\",\n      \"value\": \"@{pipeline().RunId}\"\n    }\n  ]\n}",
+                                    "type": "Expression"
+                                }
+                            },
+                            "linkedServiceName": {
+                                "referenceName": "FunctionApp_LS",
+                                "type": "LinkedServiceReference"
+                            }
+                        },
+                        {
+                            "name": "EndPipelineExecutionLog_AF",
+                            "type": "AzureFunctionActivity",
+                            "dependsOn": [
+                                {
+                                    "activity": "MergeStageToTarget_AF",
+                                    "dependencyConditions": [
+                                        "Succeeded"
+                                    ]
+                                }
+                            ],
+                            "policy": {
+                                "timeout": "7.00:00:00",
+                                "retry": 0,
+                                "retryIntervalInSeconds": 30,
+                                "secureOutput": false,
+                                "secureInput": false
+                            },
+                            "userProperties": [],
+                            "typeProperties": {
+                                "functionName": "SnowflakeConnectorPyAdf",
+                                "method": "POST",
+                                "headers": {},
+                                "body": {
+                                    "value": "{\n    \"databaseName\": \"@{pipeline().parameters.databaseName}\",\n    \"schemaName\": \"LOGS\",\n    \"storedProcedureName\": \"SP_END_PIPELINE_EXECUTION\",\n    \"parameters\": [\n      {\n        \"name\": \"ADF_PIPELINE_RUN_ID\",\n        \"type\": \"VARCHAR\",\n        \"value\": \"@{pipeline().RunId}\"\n      },\n      {\n        \"name\": \"ROWS_LOADED\",\n        \"type\": \"NUMBER\",\n        \"value\": \"@{activity('CopyBlobToStage_AF').output.ROWS_LOADED}\"\n      },\n      {\n        \"name\": \"ROWS_INSERTED\",\n        \"type\": \"NUMBER\",\n        \"value\": \"@{activity('MergeStageToTarget_AF').output.ROWS_INSERTED}\"\n      },\n      {\n        \"name\": \"ROWS_UPDATED\",\n        \"type\": \"NUMBER\",\n        \"value\": \"@{activity('MergeStageToTarget_AF').output.ROWS_UPDATED}\"\n      },\n      {\n        \"name\": \"ROWS_DELETED\",\n        \"type\": \"NUMBER\",\n        \"value\": 0\n      }\n    ]\n}",
+                                    "type": "Expression"
+                                }
+                            },
+                            "linkedServiceName": {
+                                "referenceName": "FunctionApp_LS",
+                                "type": "LinkedServiceReference"
+                            }
+                        }
+                    ],
+                    "parameters": {
+                        "databaseName": {
+                            "type": "string",
+                            "defaultValue": "ADF_DEMO"
+                        },
+                        "schemaName": {
+                            "type": "string",
+                            "defaultValue": "TRIPPIN"
+                        },
+                        "tableName": {
+                            "type": "string",
+                            "defaultValue": "PEOPLE"
+                        }
+                    },
+                    "variables": {
+                        "fileName": {
+                            "type": "String"
+                        }
+                    },
+                    "annotations": []
+                    },
+                    "dependsOn": [
+                        "[concat(variables('dataFactoryId'), '/datasets/TripPin_DS')]",
+                        "[concat(variables('dataFactoryId'), '/datasets/DelimitedText_DS')]",
+                        "[concat(variables('dataFactoryId'), '/linkedServices/FunctionApp_LS')]"
+                ]
+        }
+    ]
+}
